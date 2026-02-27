@@ -1,4 +1,11 @@
 langgraph
 langchain
 langsmith
+langchain-anthropic
 python-dotenv
+langchain-community
+langchain-tavily
+mcp
+ipykernel
+crawl4ai
+langchain-mcp-adapters
