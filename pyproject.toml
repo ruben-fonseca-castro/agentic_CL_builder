@@ -19,6 +19,7 @@ dependencies = [
     "langchain-tavily>=0.2.17",
     "langgraph>=1.0.8",
     "langsmith>=0.7.4",
+    "markdown-pdf>=1.13.1",
     "mcp>=1.26.0",
     "pypdf>=6.7.4",
     "python-dotenv>=1.2.1",
