@@ -9,3 +9,8 @@ mcp
 ipykernel
 crawl4ai
 langchain-mcp-adapters
+langchain-chroma
+pypdf
+langchain-openai
+langchain-huggingface
+sentence-transformers
