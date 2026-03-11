@@ -73,7 +73,7 @@ async def main():
 
     # persisent directory of the database
     persist_directory = "./chroma_db"
-    source_file = "./personal_context/ruben.md" # location of the personal context file (markdown labeled)
+    source_file = "./personal_context/context.md" # location of the personal context file (markdown labeled)
     
     # Initialize BGE-M3
 
