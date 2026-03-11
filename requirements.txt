@@ -15,3 +15,6 @@ langchain-openai
 langchain-huggingface
 sentence-transformers
 markdown-pdf
+requests
+rich
+typer

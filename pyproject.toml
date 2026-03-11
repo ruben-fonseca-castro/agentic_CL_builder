@@ -23,8 +23,11 @@ dependencies = [
     "mcp>=1.26.0",
     "pypdf>=6.7.4",
     "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+    "rich>=14.3.3",
     "sentence-transformers>=5.2.3",
     "tavily-python>=0.7.22",
+    "typer>=0.24.1",
 ]
 
 
