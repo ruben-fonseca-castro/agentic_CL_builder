@@ -1,0 +1,18 @@
+﻿[MONTH] [DAY], 2026
+
+[COMPANY NAME]
+[COMPANY ADDRESS]
+
+Dear [COMPANY NAME] Recruitment Team,
+
+My name is [NAME], and I am a [ACADEMIC BACKGROUND]. I am writing to apply for the 
+[POSITION NAME] position. The field of [SPECIFIC INDUSTRY FIELD TERMS] are what inspired me to pursue [FIELD], and [COMPANY NAME]’s vision of [COMPANY VISION/GOALS/OBJECTIVE] is something that deeply resonates with my own personal motivations in [FIELD]. I would welcome the opportunity to contribute through my technical skills, teamwork and communication skills, and past experiences in team-based endeavors and projects.
+
+[BODY PARAGRAPH 1]
+
+[BODY PARAGRAPH 2]
+
+This opportunity would not only allow me to further develop important skills that will be integral to any project I tackle, but also provide a means for me to pour passion into something I truly care about. Thank you for your consideration, and I look forward to the opportunity to speak with you about my interest in this position. 
+
+Sincerely,
+[NAME]

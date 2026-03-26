@@ -12,6 +12,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="requests")
 warnings.filterwarnings("ignore", message=".*urllib3.*")
 # 3. Optional: Silence the logger if it's being sent to logging instead of stdout
 logging.getLogger("requests").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 from langchain.tools import tool
 from langchain.chat_models import init_chat_model
@@ -36,6 +37,11 @@ from langgraph.graph import StateGraph, START, END
 from datetime import datetime
 import asyncio
 from rich.console import Console
+from rich.live import Live
+from rich.table import Table
+from rich.panel import Panel
+from rich.console import Console
+from rich.progress import Progress, TextColumn, SpinnerColumn
 
 ## Main Function ##
 
@@ -136,7 +142,7 @@ async def main():
         Crawls a website and returns its clean markdown content. 
         Use this for extracting detailed information from job postings or company pages.
         """
-        async with AsyncWebCrawler() as crawler:
+        async with AsyncWebCrawler(verbose=False) as crawler:
             # arun fetches the page and converts it to LLM-ready markdown
             result = await crawler.arun(url=url)
             
@@ -161,12 +167,13 @@ async def main():
             SystemMessage(
                 content="""You are a helpful researcher tasked with using your tools to take in a given request, and 
                 perform the necessary tool calls to fill out the company research and job description fields in the State. 
-                Take the URL that is given to you,and perform a Crawl scrape on it, which gets saved to job_desc. Based on 
-                whatever company that job description is for, then perform a Tavily search to find out general company values,
-                mission statements, and beliefs that characterize the work and style of that company, this will then be saved 
-                into company_research. You do not need to know the specific information extracted from either tool, that is
-                handled and saved to the state by the tool itself. Proceed once both tasks are complete. Do not summarize or
-                discuss what was extracted, simply call the necessary tools, and move on."""
+                Take the URL that is given to you, and perform a Crawl scrape on it, which gets saved to job_desc. Based on 
+                whatever company that job description is for (ensure that you have the correct company name, not a subteam or 
+                division of the company), then perform a Tavily search to find out general company values, current company 
+                headquarters location (city and state), mission statements, and beliefs that characterize the work and style of that company, 
+                this will then be saved into company_research. You do not need to know the specific information extracted from 
+                either tool, that is handled and saved to the state by the tool itself. Proceed once both tasks are complete. Do 
+                not summarize or discuss what was extracted, simply call the necessary tools, and move on."""
             )
         ] + state["messages"]
 
@@ -190,6 +197,11 @@ async def main():
         updated_job_desc = state.get("job_desc", "")
         updated_job_url = state.get("job_url", "")
 
+        # --- THE FIX: Initialize variable from state with a safe default ---
+        cover_letter_name = state.get("cover_letter_name", "Generated_Cover_Letter.pdf")
+
+
+
         for tool_call in last_message.tool_calls:
             tool_name = tool_call["name"]
             
@@ -198,7 +210,7 @@ async def main():
                 query = tool_call["args"].get("query", "")
                 raw_result = await tavily_tool.ainvoke({"query": query})
                 
-                summary_prompt = f"Summarize the company values and mission from this research in 3-5 sentences. CONTENT:{raw_result}"
+                summary_prompt = f"Summarize the company values, mission, and location information from this research in 3-5 sentences. CONTENT:{raw_result}"
                 summary = await model.ainvoke(summary_prompt)
                 
                 updated_company_research = summary.content
@@ -214,7 +226,7 @@ async def main():
                 raw_markdown = await web_crawler_tool.ainvoke({"url": url})
                 
                 summary_prompt = f"""
-                    Extract only the job responsibilities, requirements, and benefits from the following markdown.
+                    Extract only the company name, job title, job responsibilities, qualifications, and requirements from the following CONTENT.
                     Ignore navigation menus, footer links, and application form fields (dropdowns, questions).
                     
                     CONTENT: {raw_markdown}
@@ -223,11 +235,16 @@ async def main():
 
                 # TO DO: PROMPT AGAIN TO GENERATE AN APPROPRIATELY FORMATTED COVER LETTER NAME SO THAT IT USES IT UPON OUTPUT!!!!!
                 pdf_name_prompt = f"""
-                Based on the following job description content, create a title for a cover letter under the following format.
+                Based on the following job description CONTENT, create a title for a cover letter under the following format.
                 Do not deviate from the following format, and do not include any other explanative or confirming text. Output
                 ONLY the correctly formatted string:
 
                 STRING FORMAT: "[COMPANY_NAME]_[JOB_TITLE]_Cover_Letter.pdf"
+
+                CRITICAL INSTRUCTIONS:
+                1. Output ONLY the correctly formatted string.
+                2. Do NOT include any conversational text, apologies, or explanations.
+                3. If the CONTENT is empty or you cannot find the company/job title, output EXACTLY: "Generated_Cover_Letter.pdf"
 
                 CONTENT: {raw_markdown}
                 """
@@ -269,8 +286,28 @@ async def main():
         
         # --- STEP 1: RAG RETRIEVAL ---
 
+        query_prompt = f"""
+            Extract the most critical technical requirements from this job description to use as a dense database search query.
+            
+            You must return exactly 12 to 20 highly specific technical keywords or short phrases. 
+            Focus heavily on identifying hard skills across the relevant engineering disciplines (Mechanical, Software, Electrical, Robotics, etc.):
+            1. Software & Tools: Programming languages, CAD/design software, and simulation tools (e.g., Python, SolidWorks, MATLAB, Altium).
+            2. Frameworks & Environments: Libraries, operating systems, and middleware (e.g., ROS, Linux, RTOS, PyTorch).
+            3. Core Engineering & Analytical Skills: Methodologies, mathematical models, and domain expertise (e.g., Finite Element Analysis, control theory, thermodynamics, machine learning).
+            4. Hardware & Physical Systems: Manufacturing processes, testing equipment, circuitry, and physical components (e.g., CNC machining, PCB layout, CAN bus, sensors).
+            
+            IGNORE soft skills (e.g., "team player", "cross-functional communication"), generic company culture/perks, and basic educational requirements.
+            
+            Return ONLY a single comma-separated list of these 12-20 technical terms. Do not include bullet points, category labels, or any other text.
+            
+            Job Description: {job_requirements}
+            """
+
+        keyword_response = await model.ainvoke(query_prompt)
+        dense_query = keyword_response.content
+
         # Find experiences in your resumes that match the job description
-        relevant_docs = await retriever.ainvoke(job_requirements)
+        relevant_docs = await retriever.ainvoke(dense_query)
 
         # FORCE UNIQUENESS: Use a set to track content we've already seen
         unique_content = []
@@ -309,7 +346,8 @@ async def main():
             {formatted_options}
             
             TASK:
-            Identify the IDs of the 2-3 most relevant experiences that best match the job requirements.
+            Identify the IDs of the 2-3 most relevant experiences and projects that best match and are closely 
+            related to the job requirements and skills that the job is asking for. 
             Return ONLY the IDs as a comma-separated list (e.g., 0, 2). Do not include any text.
             """
 
@@ -362,7 +400,7 @@ async def main():
         on the information provided to you. For the first and fourth body paragraphs, besides those bracketed fill in
         sections, do not change the wording/sentences. For the second and third body paragraphs, treat the style sample as
         purely a style sample, and instead replace them with similarly lengthed paragraphs that discuss the 2-3 specific
-        experiences that are highlighted, and tie them to the job requirements, or overall company values as best as possible,
+        experiences that are highlighted, and tie them to the job requirements and/or overall company values as best as possible,
         again using Ruben's writing style.
 
         STRICT STYLE GUIDE (Mimic this):
@@ -389,7 +427,7 @@ async def main():
         exact format:
 
         OUTPUT STRUCTURE TEMPLATE (YOU MUST FOLLOW THIS EXACTLY, DON"T FORGET TO INCLUDE THE # MARKDOWN ELEMENTS):
-        # [today's date]
+        # [today's  date]
         # [Company Name]
         # [Company City, State]
         
@@ -526,6 +564,39 @@ async def main():
 
     # Setup complete, moving onto main loop
 
+    # Mapping technical node names to professional status updates
+
+    # checklist function
+    # def generate_checklist(node_statuses):
+    #     """Creates a table showing the progress of each agent node."""
+    #     table = Table.grid(padding=(0, 1))
+    #     table.add_column("Status", justify="center", width=3)
+    #     table.add_column("Task", justify="left")
+
+    #     for task, status in node_statuses.items():
+    #         if status == "working":
+    #             icon = "[bold blue]⚙[/bold blue]"
+    #             text = f"[bold blue]{task}...[/bold blue]"
+    #         elif status == "done":
+    #             icon = "[bold green]✔[/bold green]"
+    #             text = f"[green]{task}[/green]"
+    #         else:
+    #             icon = "[dim]○[/dim]"
+    #             text = f"[dim]{task}[/dim]"
+            
+    #         table.add_row(icon, text)
+        
+    #     return Panel(table, title="[bold]Build Progress[/bold]", border_style="blue", expand=False)
+
+    
+    task_map = {
+        "llm_call": "🔍 Researcher: Analyzing job requirements",
+        "tool_node": "🌐 Researcher: Scraping job site and company data",
+        "context_engine": "🧠 Strategist: Selecting best project matches",
+        "cl_writer": "✍️ Writer: Drafting your tailored cover letter",
+        "pdf_generator": "📄 Generator: Formatting and saving PDF"
+    }
+
 
     console = Console()
     console.print("\n[bold green]✓ Agentic Cover Letter Builder Initialized![/bold green]")
@@ -544,7 +615,9 @@ async def main():
             if not url:
                 continue
 
-            # 3. Setup the initial state exactly as you had it
+            console.print("\n" * 6)
+
+            # 3. Setup the initial state 
             today = datetime.now().strftime("%B %d, %Y")
             request = [HumanMessage(content=f"Scrape the listing from this website: {url}. Also extract the company information of that listing")]
             
@@ -553,13 +626,126 @@ async def main():
                 "current_date": today  
             }
 
+            # # node status for checklist display in CLI
+            # node_statuses = {
+            #     "🔍 Researcher: Analyzing job requirements": "pending",
+            #     "🌐 Researcher: Scraping job site and company data": "pending",
+            #     "🧠 Strategist: Selecting best project matches": "pending",
+            #     "✍️ Writer: Drafting your tailored cover letter": "pending",
+            #     "📄 Generator: Formatting and saving PDF": "pending"
+            # }
+            
+            current_cover_letter_name = "Cover_Letter_Fallback.pdf"
+            
+
             # 4. Execute the graph inside a rich status spinner
-            with console.status("[bold blue]Agent is researching, strategizing, and writing...[/bold blue]", spinner="dots"):
-                final_state = await agent.ainvoke(initial_state)
+            # with console.status("[bold blue]Agent is researching, strategizing, and writing...[/bold blue]", spinner="dots"):
+            #     final_state = await agent.ainvoke(initial_state)
+
+            # with console.status("[bold blue]Initializing agent...[/bold blue]", spinner="dots") as status:
+            #     # Use astream to get updates as each node finishes
+            #     async for event in agent.astream(initial_state, stream_mode="updates"):
+            #         # 'event' is a dict: { "node_name": { "state_key": value } }
+            #         for node_name in event.keys():
+            #             if node_name in NODE_LABELS:
+            #                 # Dynamically update the spinner text based on the active node
+            #                 status.update(f"[bold blue]{NODE_LABELS[node_name]}[/bold blue]")
+
+
+            # # 2. Use Live to keep the checklist on screen
+            # with Live(generate_checklist(node_statuses), console=console, auto_refresh=False) as live:
+            #     async for event in agent.astream(initial_state, stream_mode="updates"):
+            #         # event looks like: {"node_name": {"state_key": value}}
+            #         for node_name, node_update in event.items():
+                        
+            #             # --- FILENAME CATCHER ---
+            #             # If the tool_node updates the filename, we catch it here
+            #             if "cover_letter_name" in node_update:
+            #                 current_cover_letter_name = node_update["cover_letter_name"]
+
+            #             # --- UI UPDATER ---
+            #             task_name = task_map.get(node_name)
+            #             if task_name:
+            #                 # Mark any previously 'working' tasks as 'done'
+            #                 for k in node_statuses:
+            #                     if node_statuses[k] == "working":
+            #                         node_statuses[k] = "done"
+                            
+            #                 # Set current task to working
+            #                 node_statuses[task_name] = "working"
+                            
+            #             # Re-render the table
+            #             live.update(generate_checklist(node_statuses), refresh=True)
+                
+            #     # Final set: Ensure the last task is marked done at the end
+            #     for k in node_statuses:
+            #         node_statuses[k] = "done"
+            #     live.update(generate_checklist(node_statuses), refresh=True)
+
+            #     final_state = event
+
+
+            # 1. Initialize Progress with just Text, turning off transient so it stays on screen
+            with Progress(
+                TextColumn("{task.description}"),
+                console=console,
+                transient=False,
+                redirect_stdout=True,
+                redirect_stderr=True 
+            ) as progress:
+                
+                # 2. Add all tasks upfront so the whole list is visible immediately
+                task_ids = {}
+                for node_key, task_name in task_map.items():
+                    # Initialize them with a dim empty circle
+                    task_ids[node_key] = progress.add_task(f"[dim]○ {task_name}[/dim]", total=None)
+
+                active_node = None
+
+                completed_nodes = set()
+
+                async for event in agent.astream(initial_state, stream_mode="updates"):
+                    for node_name, node_update in event.items():
+                        
+                        if "cover_letter_name" in node_update:
+                            current_cover_letter_name = node_update["cover_letter_name"]
+
+                        if node_name in task_map:
+                            # 3. Mark the PREVIOUS task as done (green check)
+                            if active_node and active_node != node_name:
+                                completed_nodes.add(active_node)
+                                progress.update(
+                                    task_ids[active_node], 
+                                    description=f"[bold green]✔ {task_map[active_node]}[/bold green]"
+                                )
+
+                            if node_name not in completed_nodes:
+                                active_node = node_name
+                                progress.update(
+                                    task_ids[active_node], 
+                                    description=f"[bold blue]⚙ {task_map[active_node]}...[/bold blue]"
+                                )
+
+                            # # 4. Set the CURRENT task to working (blue gear)
+                            # active_node = node_name
+                            # progress.update(
+                            #     task_ids[active_node], 
+                            #     description=f"[bold blue]⚙ {task_map[active_node]}...[/bold blue]"
+                            # )
+
+                # 5. When the loop finishes, mark the final task as done
+                if active_node:
+                    progress.update(
+                        task_ids[active_node], 
+                        description=f"[bold green]✔ {task_map[active_node]}[/bold green]"
+                    )
+
+                # final_state = event
+
 
             # 5. Extract the generated filename and print success
-            output_name = final_state.get('cover_letter_name', 'Cover_Letter.pdf')
-            console.print(f"[bold green]✓ Process Complete![/bold green] Cover letter saved as [bold white]{output_name}[/bold white] in ./output_letters\n")
+            # output_name = final_state.get('cover_letter_name', 'Cover_Letter.pdf')
+            console.print(f"[bold green]✓ Process Complete![/bold green] Cover letter saved as [bold white]{current_cover_letter_name}[/bold white] in ./output_letters\n")
 
         except KeyboardInterrupt:
             # Handles Ctrl+C gracefully

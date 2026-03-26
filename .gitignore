@@ -2,5 +2,6 @@
 .venv
 .vscode
 chroma_db
-personal_context
+personal_context/context.md
+personal_context/samples/sample_cover_letter.txt
 output_letters

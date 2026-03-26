@@ -38,14 +38,19 @@ writing style provided. This then gets converted to a pdf under a predefined css
 
 5. **Personal Context Setup:**
    The script relies on your personal context to tailor the letter:
-   - **Resume Database:** Update `./personal_context/context.md` with your own resume or list of experiences. Maintain the Markdown header format `## Project: ...` so the splitter can chunk it correctly (`Use either Project: or Experience:`, followed by a title of the revevant entry). Right under, include a `Details: ...` section that details a given project, followed by a new line separating different entries.
-   - **Writing Sample:** Update `./personal_context/samples/sample_cover_letter.txt` with a template of your cover letter writing style, using bracketed placeholders like `[COMPANY NAME]` for the LLM to understand style and structure. Ensure that the template itself originally fits in a 1 page pdf format. 
+   - **Resume Database:** Update `./personal_context/context_SAMPLE.md` with your own resume or list of experiences. Maintain the Markdown header format `## Project: ...` so the splitter can chunk it correctly (`Use either Project: or Experience:`, followed by a title of the revevant entry). Right under, include a `Details: ...` section that details a given project, followed by a new line separating different entries. REMEMBER TO CHANGE THE NAME OF THE FILE TO `context.md` AFTER UPDATING IT!
+   - **Writing Sample:** Update `./personal_context/samples/sample_cover_letter_SAMPLE.txt` with a template of your cover letter writing style, using bracketed placeholders like `[COMPANY NAME]` for the LLM to understand style and structure. Ensure that the template itself originally fits in a 1 page pdf format. REMEMBER TO CHANGE THE NAME OF THE FILE TO `sample_cover_letter.txt` AFTER UPDATING IT!
+
+6. ** Edit Prompts in agentic_cl_builder.py:**
+   - **Writing Prompt:** Edit the `writer_prompt` variable in the `agentic_cl_builder.py` file to change the writing style, name, tone, or structure of the cover letter. It will probably take a few tries to get right.
+
 
 ## How to Run
 
 1. **Execute the Agentic Builder:**
    Start the application using Python:
    ```bash
+   source .venv/bin/activate
    python agentic_cl_builder.py
    ```
 
